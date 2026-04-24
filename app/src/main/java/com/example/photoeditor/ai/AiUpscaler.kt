@@ -24,54 +24,55 @@ class AiUpscaler {
         }
     }
 
-    /**
-     * @param targetScale Escala final deseada (2 o 4)
-     * @param isEnhanceEnabled Si es true, aplica limpieza de desenfoque reconstruyendo bordes
-     */
     suspend fun upscale(context: Context, bitmap: Bitmap, targetScale: Int = 2, isEnhanceEnabled: Boolean = false): Bitmap? = withContext(Dispatchers.Default) {
-        logToFile(context, "--- PROCESO IA INICIADO (Modo Limpieza: $isEnhanceEnabled) ---")
+        logToFile(context, "--- PROCESO IA INICIADO ---")
+        logToFile(context, "INFO IMAGEN: ${bitmap.width}x${bitmap.height} px, Config: ${bitmap.config}")
+        
         try {
             val localUpscaler = LocalUpscaler(context)
             
-            // ESTRATEGIA DE PROCESAMIENTO
-            // Para mejorar la calidad (quitar borrosidad), procesamos a una resolución donde la IA es óptima
-            val maxInputSize = if (isEnhanceEnabled) 1000f else 1600f
+            // 1. AJUSTAR DIMENSIONES PARA EL MODELO (DEBEN SER PARES)
+            var safeWidth = bitmap.width
+            var safeHeight = bitmap.height
             
-            val currentMax = Math.max(bitmap.width, bitmap.height).toFloat()
-            val workingBitmap = if (currentMax > maxInputSize) {
-                logToFile(context, "Redimensionando para procesamiento IA óptimo...")
-                val scale = maxInputSize / currentMax
-                Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+            // Si son impares, ajustamos para evitar el error de Reshape en ONNX
+            if (safeWidth % 2 != 0) safeWidth--
+            if (safeHeight % 2 != 0) safeHeight--
+            
+            val maxInputSize = if (isEnhanceEnabled) 1000f else 1600f
+            val currentMax = Math.max(safeWidth, safeHeight).toFloat()
+            
+            val workingBitmap = if (currentMax > maxInputSize || safeWidth != bitmap.width || safeHeight != bitmap.height) {
+                val scale = if (currentMax > maxInputSize) maxInputSize / currentMax else 1f
+                val finalW = (safeWidth * scale).toInt().let { if (it % 2 != 0) it - 1 else it }
+                val finalH = (safeHeight * scale).toInt().let { if (it % 2 != 0) it - 1 else it }
+                
+                logToFile(context, "IA -> Ajustando imagen a dimensiones seguras (Pares): ${finalW}x${finalH}")
+                Bitmap.createScaledBitmap(bitmap, finalW, finalH, true)
             } else {
                 bitmap
             }
 
-            // 2. EJECUTAR IA
-            logToFile(context, "Ejecutando Red Neuronal sobre ${workingBitmap.width}x${workingBitmap.height}...")
-            
-            // Este es el paso pesado que reconstruye la imagen
+            logToFile(context, "IA -> Llamando al motor de inferencia local con imagen de ${workingBitmap.width}x${workingBitmap.height}...")
             val aiResult = localUpscaler.upscale(workingBitmap)
             localUpscaler.close()
 
             if (aiResult == null) {
-                logToFile(context, "ERROR: El motor de IA no pudo procesar la imagen.")
+                logToFile(context, "ERROR CRÍTICO: El motor de IA no pudo procesar esta imagen específica.")
                 return@withContext null
             }
 
-            // ESCALADO FINAL AL TAMAÑO SOLICITADO (2X o 4X)
             val finalWidth = bitmap.width * targetScale
             val finalHeight = bitmap.height * targetScale
             
-            logToFile(context, "Generando imagen final de alta fidelidad (${finalWidth}x${finalHeight})...")
-            
-            // Usamos un escalado de alta calidad para el paso final
+            logToFile(context, "IA -> Reconstruyendo imagen final a ${finalWidth}x${finalHeight}")
             val finalBitmap = Bitmap.createScaledBitmap(aiResult, finalWidth, finalHeight, true)
             
-            logToFile(context, "¡ÉXITO TOTAL!")
+            logToFile(context, "--- ¡EXPORTACIÓN IA COMPLETADA CON ÉXITO! ---")
             return@withContext finalBitmap
 
         } catch (e: Exception) {
-            logToFile(context, "ERROR CRÍTICO: ${e.localizedMessage}")
+            logToFile(context, "FALLO TOTAL EN PROCESO IA: ${e.localizedMessage}")
             null
         }
     }

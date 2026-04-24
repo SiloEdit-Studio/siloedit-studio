@@ -25,16 +25,21 @@ class LocalUpscaler(private val context: Context) {
     }
 
     suspend fun upscale(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
-        val session = ortSession ?: return@withContext null
+        val session = ortSession ?: run {
+            AiUpscaler.logToFile(context, "ERROR: Sesión ONNX no inicializada.")
+            return@withContext null
+        }
 
         try {
             val width = bitmap.width
             val height = bitmap.height
+            AiUpscaler.logToFile(context, "LocalUpscaler -> Recibida imagen de ${width}x${height} para procesar.")
             
             // Detectar formato NCHW/NHWC automáticamente
             val inputInfo = session.inputInfo.values.first().info as TensorInfo
             val shape = inputInfo.shape
             val isNCHW = if (shape.size >= 4) shape[1] == 3L else true
+            AiUpscaler.logToFile(context, "LocalUpscaler -> Formato detectado: ${if (isNCHW) "NCHW (Canales Primero)" else "NHWC (Canales Final)"}")
             
             val floatBuffer = FloatBuffer.allocate(3 * width * height)
             
@@ -63,12 +68,14 @@ class LocalUpscaler(private val context: Context) {
                 if (isNCHW) longArrayOf(1, 3, height.toLong(), width.toLong()) 
                 else longArrayOf(1, height.toLong(), width.toLong(), 3))
             
+            AiUpscaler.logToFile(context, "LocalUpscaler -> Ejecutando inferencia ONNX...")
             val results = session.run(mapOf(inputName to inputTensor))
             val outputTensor = results.first().value as OnnxTensor
             
             val outputShape = outputTensor.info.shape
             val outH = if (isNCHW) outputShape[2].toInt() else outputShape[1].toInt()
             val outW = if (isNCHW) outputShape[3].toInt() else outputShape[2].toInt()
+            AiUpscaler.logToFile(context, "LocalUpscaler -> Inferencia completada. Salida: ${outW}x${outH}")
             
             val outputData = outputTensor.floatBuffer
             val outBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
@@ -98,10 +105,11 @@ class LocalUpscaler(private val context: Context) {
             
             inputTensor.close()
             results.close()
+            AiUpscaler.logToFile(context, "LocalUpscaler -> Bitmap de salida generado correctamente.")
             return@withContext outBitmap
 
         } catch (e: Exception) {
-            AiUpscaler.logToFile(context, "Error Inferencia: ${e.message}")
+            AiUpscaler.logToFile(context, "LocalUpscaler -> ERROR en Inferencia: ${e.message}")
             null
         }
     }
