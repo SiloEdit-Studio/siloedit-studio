@@ -80,6 +80,10 @@ dependencies {
     // AI - ONNX Runtime
     implementation(libs.onnxruntime.android)
 
+    // ML Kit Face Detection
+    implementation("com.google.mlkit:face-detection:16.1.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

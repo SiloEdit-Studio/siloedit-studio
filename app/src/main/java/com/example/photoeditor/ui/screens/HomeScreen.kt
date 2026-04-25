@@ -18,7 +18,7 @@ fun HomeScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Photo AI Studio", style = MaterialTheme.typography.displayMedium)
+        Text("SiloEdit Studio", style = MaterialTheme.typography.displayMedium)
         Spacer(modifier = Modifier.height(48.dp))
 
         Button(

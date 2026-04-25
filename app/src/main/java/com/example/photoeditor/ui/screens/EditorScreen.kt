@@ -39,7 +39,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.photoeditor.ai.AiUpscaler
+import com.example.photoeditor.ai.ExportService
 import com.example.photoeditor.ai.ImageProcessor
+import java.io.File
+import java.io.FileOutputStream
 import com.example.photoeditor.ui.PhotoViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,6 +81,7 @@ fun EditorScreen(viewModel: PhotoViewModel) {
     // Estado IA (Persistente para el Exportador)
     var isUpscaleEnabled by remember { mutableStateOf(false) }
     var isEnhanceEnabled by remember { mutableStateOf(false) }
+    var isDeblurEnabled by remember { mutableStateOf(false) }
     var selectedScale by remember { mutableIntStateOf(2) }
     var isSavingProcess by remember { mutableStateOf(false) }
 
@@ -117,44 +121,30 @@ fun EditorScreen(viewModel: PhotoViewModel) {
 
         scope.launch(Dispatchers.IO) {
             try {
-                AiUpscaler.logToFile(context, "--- INICIO EXPORTACIÓN ---")
-                
-                var finalBitmap = baseBitmap
-                if (isUpscaleEnabled || isEnhanceEnabled) {
-                    AiUpscaler.logToFile(context, "Procesando IA (Enhance: $isEnhanceEnabled, Scale: $selectedScale)...")
-                    val result = AiUpscaler().upscale(context, baseBitmap, selectedScale, isEnhanceEnabled)
-                    if (result != null) {
-                        finalBitmap = result
-                    }
+                // 1. Guardar bitmap original en archivo temporal
+                val tempFile = File(context.cacheDir, "temp_export.jpg")
+                FileOutputStream(tempFile).use { 
+                    baseBitmap.compress(Bitmap.CompressFormat.JPEG, 100, it)
                 }
 
-                val edited = processor.applyFinalEffects(
-                    context,
-                    finalBitmap,
-                    finalMatrix,
-                    vignette,
-                    sharpenAmountSlider * 20f,
-                    textureAmountSlider * 20f
+                // 2. Iniciar Servicio de Exportación en Foreground
+                ExportService.startExport(
+                    context = context,
+                    inputPath = tempFile.absolutePath,
+                    isDeblur = isDeblurEnabled,
+                    isEnhance = isEnhanceEnabled,
+                    scale = selectedScale,
+                    sharpen = sharpenAmountSlider,
+                    texture = textureAmountSlider,
+                    vignette = vignette,
+                    matrix = finalMatrix.values
                 )
-
-                val filename = "PhotoAI_${System.currentTimeMillis()}.jpg"
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/PhotoAI")
-                }
-
-                val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-                uri?.let {
-                    context.contentResolver.openOutputStream(it)?.use { stream ->
-                        edited.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                    }
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "¡Guardado con éxito!", Toast.LENGTH_LONG).show()
-                    }
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Procesando en segundo plano...", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                AiUpscaler.logToFile(context, "ERROR: ${e.message}")
+                AiUpscaler.logToFile(context, "ERROR AL INICIAR SERVICIO: ${e.message}")
             } finally {
                 isSavingProcess = false
             }
@@ -166,7 +156,7 @@ fun EditorScreen(viewModel: PhotoViewModel) {
             if (currentBitmap != null) {
                 AnimatedVisibility(visible = isUIVisible, enter = fadeIn(), exit = fadeOut()) {
                     TopAppBar(
-                        title = { Text("PHOTO AI STUDIO", color = LightroomGray, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                        title = { Text("SiloEdit Studio", color = LightroomGray, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
                         actions = {
                             IconButton(onClick = { launcher.launch("image/*") }) {
                                 Icon(Icons.Default.AddPhotoAlternate, "Cambiar", tint = LightroomGray)
@@ -217,24 +207,36 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                                             EditorSection("Inteligencia Artificial Local", true, { expandedSection = "" }) {
                                                 Text("MEJORA INTELIGENTE", color = LightroomBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 Spacer(Modifier.height(8.dp))
-                                                
-                                                OutlinedButton(
-                                                    onClick = { 
-                                                        isEnhanceEnabled = !isEnhanceEnabled
-                                                        if (isEnhanceEnabled) {
-                                                            isUpscaleEnabled = true
-                                                            if (selectedScale == 0) selectedScale = 2
-                                                        }
-                                                    },
-                                                    border = if (isEnhanceEnabled) BorderStroke(2.dp, Color(0xFF00C853)) else BorderStroke(1.dp, Color.Gray),
+
+                                                Row(
                                                     modifier = Modifier.fillMaxWidth(),
-                                                    colors = ButtonDefaults.outlinedButtonColors(
-                                                        containerColor = if (isEnhanceEnabled) Color(0xFF00C853).copy(0.1f) else Color.Transparent
-                                                    )
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
-                                                    Icon(Icons.Default.AutoFixNormal, null, tint = if (isEnhanceEnabled) Color(0xFF00C853) else Color.Gray)
-                                                    Spacer(Modifier.width(8.dp))
-                                                    Text("LIMPIEZA DE DESENFOQUE IA", color = if (isEnhanceEnabled) Color.White else Color.Gray)
+                                                    OutlinedButton(
+                                                        onClick = { isEnhanceEnabled = !isEnhanceEnabled },
+                                                        border = if (isEnhanceEnabled) BorderStroke(2.dp, Color(0xFF00C853)) else BorderStroke(1.dp, Color.Gray),
+                                                        modifier = Modifier.weight(1f),
+                                                        colors = ButtonDefaults.outlinedButtonColors(
+                                                            containerColor = if (isEnhanceEnabled) Color(0xFF00C853).copy(0.1f) else Color.Transparent
+                                                        )
+                                                    ) {
+                                                        Icon(Icons.Default.AutoFixNormal, null, tint = if (isEnhanceEnabled) Color(0xFF00C853) else Color.Gray, modifier = Modifier.size(18.dp))
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text("LIMPIEZA", color = if (isEnhanceEnabled) Color.White else Color.Gray, fontSize = 12.sp)
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = { isDeblurEnabled = !isDeblurEnabled },
+                                                        border = if (isDeblurEnabled) BorderStroke(2.dp, Color(0xFF2196F3)) else BorderStroke(1.dp, Color.Gray),
+                                                        modifier = Modifier.weight(1f),
+                                                        colors = ButtonDefaults.outlinedButtonColors(
+                                                            containerColor = if (isDeblurEnabled) Color(0xFF2196F3).copy(0.1f) else Color.Transparent
+                                                        )
+                                                    ) {
+                                                        Icon(Icons.Default.BlurOff, null, tint = if (isDeblurEnabled) Color(0xFF2196F3) else Color.Gray, modifier = Modifier.size(18.dp))
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text("DEBLUR", color = if (isDeblurEnabled) Color.White else Color.Gray, fontSize = 12.sp)
+                                                    }
                                                 }
 
                                                 Spacer(Modifier.height(16.dp))
@@ -318,6 +320,7 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                                 textureAmountSlider = 0f
                                 isUpscaleEnabled = false
                                 isEnhanceEnabled = false
+                                isDeblurEnabled = false
                             }) {
                                 Icon(Icons.Default.Refresh, "Reset", tint = Color.Gray)
                             }
