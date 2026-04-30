@@ -46,6 +46,12 @@ class LocalUpscaler(private val context: Context) {
         }
     }
 
+    fun unloadAll() {
+        sessions.forEach { it.value.close() }
+        sessions.clear()
+        AiUpscaler.logToFile(context, "ENGINE: Todos los modelos liberados.")
+    }
+
     suspend fun runInference(
         modelName: String, 
         bitmap: Bitmap, 
@@ -57,35 +63,32 @@ class LocalUpscaler(private val context: Context) {
         try {
             val w = bitmap.width
             val h = bitmap.height
-            val floatBuffer = FloatBuffer.allocate(3 * w * h)
-            
-            var minVal = Float.MAX_VALUE
-            var maxVal = Float.MIN_VALUE
+            val pixels = IntArray(w * h)
+            bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
 
-            for (y in 0 until h) {
-                for (x in 0 until w) {
-                    val p = bitmap.getPixel(x, y)
-                    val r: Float
-                    val g: Float
-                    val b: Float
-                    
-                    if (normType == NormType.MINUS_ONE_TO_ONE) {
-                        r = (Color.red(p) / 127.5f) - 1.0f
-                        g = (Color.green(p) / 127.5f) - 1.0f
-                        b = (Color.blue(p) / 127.5f) - 1.0f
-                    } else {
-                        r = Color.red(p) / 255f
-                        g = Color.green(p) / 255f
-                        b = Color.blue(p) / 255f
-                    }
-                    
-                    floatBuffer.put(0 * w * h + y * w + x, r)
-                    floatBuffer.put(1 * w * h + y * w + x, g)
-                    floatBuffer.put(2 * w * h + y * w + x, b)
-                    
-                    if (r < minVal) minVal = r
-                    if (r > maxVal) maxVal = r
+            val floatBuffer = FloatBuffer.allocate(3 * w * h)
+
+            // Procesamiento lineal ultra-rápido con bit-shifting
+            for (i in 0 until w * h) {
+                val p = pixels[i]
+                val r: Float
+                val g: Float
+                val b: Float
+                
+                if (normType == NormType.MINUS_ONE_TO_ONE) {
+                    r = (((p shr 16) and 0xFF) / 127.5f) - 1.0f
+                    g = (((p shr 8) and 0xFF) / 127.5f) - 1.0f
+                    b = ((p and 0xFF) / 127.5f) - 1.0f
+                } else {
+                    r = ((p shr 16) and 0xFF) / 255f
+                    g = ((p shr 8) and 0xFF) / 255f
+                    b = ((p and 0xFF) / 255f) / 1.0f
                 }
+                
+                // Formato NCHW (R, G, B)
+                floatBuffer.put(i, r)
+                floatBuffer.put(w * h + i, g)
+                floatBuffer.put(2 * w * h + i, b)
             }
             floatBuffer.rewind()
             
@@ -99,28 +102,28 @@ class LocalUpscaler(private val context: Context) {
             
             val outH = outShape[2].toInt()
             val outW = outShape[3].toInt()
-            val outBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+            val outPixels = IntArray(outW * outH)
 
-            for (y in 0 until outH) {
-                for (x in 0 until outW) {
-                    var r = outputData.get(0 * outW * outH + y * outW + x)
-                    var g = outputData.get(1 * outW * outH + y * outW + x)
-                    var b = outputData.get(2 * outW * outH + y * outW + x)
-                    
-                    if (normType == NormType.MINUS_ONE_TO_ONE) {
-                        r = ((r + 1.0f) / 2.0f).coerceIn(0f, 1f)
-                        g = ((g + 1.0f) / 2.0f).coerceIn(0f, 1f)
-                        b = ((b + 1.0f) / 2.0f).coerceIn(0f, 1f)
-                    } else {
-                        r = r.coerceIn(0f, 1f)
-                        g = g.coerceIn(0f, 1f)
-                        b = b.coerceIn(0f, 1f)
-                    }
-                    outBitmap.setPixel(x, y, Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt()))
+            for (i in 0 until outW * outH) {
+                var r = outputData.get(i)
+                var g = outputData.get(outW * outH + i)
+                var b = outputData.get(2 * outW * outH + i)
+
+                if (normType == NormType.MINUS_ONE_TO_ONE) {
+                    r = ((r + 1.0f) / 2.0f).coerceIn(0f, 1f)
+                    g = ((g + 1.0f) / 2.0f).coerceIn(0f, 1f)
+                    b = ((b + 1.0f) / 2.0f).coerceIn(0f, 1f)
+                } else {
+                    r = r.coerceIn(0f, 1f)
+                    g = g.coerceIn(0f, 1f)
+                    b = b.coerceIn(0f, 1f)
                 }
+                
+                outPixels[i] = (0xFF shl 24) or ((r * 255).toInt() shl 16) or ((g * 255).toInt() shl 8) or (b * 255).toInt()
             }
             
-            AiUpscaler.logToFile(context, "INFERENCIA: $modelName | InRange: [$minVal, $maxVal] | OutSize: ${outW}x${outH}")
+            val outBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+            outBitmap.setPixels(outPixels, 0, outW, 0, 0, outW, outH)
             
             inputTensor.close()
             results.close()

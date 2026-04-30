@@ -4,19 +4,23 @@ import android.app.*
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.graphics.*
 import android.os.Build
-import android.os.Environment
 import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
 
 class ExportService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val client = OkHttpClient()
     
     companion object {
         const val CHANNEL_ID = "export_channel"
@@ -25,23 +29,29 @@ class ExportService : Service() {
         fun startExport(
             context: Context,
             inputPath: String,
-            isDeblur: Boolean,
-            isEnhance: Boolean,
+            isAiEnhance: Boolean,
+            isCleanup: Boolean,
             scale: Int,
             sharpen: Float,
             texture: Float,
             vignette: Float,
-            matrix: FloatArray
+            blur: Float,
+            useCloud: Boolean,
+            matrix: FloatArray,
+            focusY: Float = 0.8f
         ) {
             val intent = Intent(context, ExportService::class.java).apply {
                 putExtra("inputPath", inputPath)
-                putExtra("isDeblur", isDeblur)
-                putExtra("isEnhance", isEnhance)
+                putExtra("isAiEnhance", isAiEnhance)
+                putExtra("isCleanup", isCleanup)
                 putExtra("scale", scale)
                 putExtra("sharpen", sharpen)
                 putExtra("texture", texture)
                 putExtra("vignette", vignette)
+                putExtra("blur", blur)
+                putExtra("useCloud", useCloud)
                 putExtra("matrix", matrix)
+                putExtra("focusY", focusY)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -49,27 +59,67 @@ class ExportService : Service() {
                 context.startService(intent)
             }
         }
+
+        suspend fun exportCloudOnly(context: Context, bitmap: Bitmap, blurRadius: Float, focusY: Float = 0.8f): Bitmap? {
+            val client = OkHttpClient()
+            val tempFile = File(context.cacheDir, "photoroom_preview.jpg")
+            return try {
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(tempFile).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                    
+                    val requestBody = MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("imageFile", tempFile.name, tempFile.asRequestBody("image/jpeg".toMediaType()))
+                        .addFormDataPart("removeBackground", "true")
+                        .addFormDataPart("outputFormat", "png")
+                        .build()
+                        
+                    val request = Request.Builder()
+                        .url("https://image-api.photoroom.com/v2/edit")
+                        .addHeader("x-api-key", "sk_pr_test_fb6193d04d978bfe5d34ef21a86d0e51a917b73b")
+                        .post(requestBody)
+                        .build()
+                        
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val bytes = response.body?.bytes()
+                        if (bytes != null) {
+                            val subjectPng = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            if (subjectPng != null) {
+                                val processor = ImageProcessor()
+                                val result = processor.applySelectiveBlur(bitmap, subjectPng, blurRadius, isNaturalDepth = true, focusY = focusY)
+                                subjectPng.recycle()
+                                result
+                            } else null
+                        } else null
+                    } else null
+                }
+            } catch (e: Exception) { null } finally { tempFile.delete() }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("Iniciando procesamiento...", 0, 100))
+        startForeground(NOTIFICATION_ID, createNotification("Preparando exportación...", 0, 100))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.let {
             val inputPath = it.getStringExtra("inputPath") ?: return START_NOT_STICKY
-            val isDeblur = it.getBooleanExtra("isDeblur", false)
-            val isEnhance = it.getBooleanExtra("isEnhance", false)
-            val scale = it.getIntExtra("scale", 2)
-            val sharpen = it.getFloatExtra("sharpen", 0f)
-            val texture = it.getFloatExtra("texture", 0f)
+            val isAiEnhance = it.getBooleanExtra("isAiEnhance", false)
+            val isCleanup = it.getBooleanExtra("isCleanup", false)
+            val scale = it.getIntExtra("scale", 1)
+            val sharpen = it.getFloatExtra("sharpen", 5f)
+            val texture = it.getFloatExtra("texture", 5f)
             val vignette = it.getFloatExtra("vignette", 0f)
+            val blur = it.getFloatExtra("blur", 0f)
+            val useCloud = it.getBooleanExtra("useCloud", false)
             val matrix = it.getFloatArrayExtra("matrix") ?: FloatArray(20)
+            val focusY = it.getFloatExtra("focusY", 0.8f)
 
             serviceScope.launch {
-                processAndSave(inputPath, isDeblur, isEnhance, scale, sharpen, texture, vignette, matrix)
+                processAndSave(inputPath, isAiEnhance, isCleanup, scale, sharpen, texture, vignette, blur, useCloud, matrix, focusY)
                 stopForeground(STOP_FOREGROUND_DETACH)
                 stopSelf()
             }
@@ -79,54 +129,113 @@ class ExportService : Service() {
 
     private suspend fun processAndSave(
         inputPath: String,
-        isDeblur: Boolean,
-        isEnhance: Boolean,
+        isAiEnhance: Boolean,
+        isCleanup: Boolean,
         scale: Int,
         sharpen: Float,
         texture: Float,
         vignette: Float,
-        matrix: FloatArray
+        blur: Float,
+        useCloud: Boolean,
+        matrix: FloatArray,
+        focusY: Float
     ) {
         try {
-            updateNotification("Cargando imagen...", 0, 100)
+            updateNotification("Cargando imagen...", 10, 100)
             val options = BitmapFactory.Options().apply { inMutable = true }
             var bitmap = BitmapFactory.decodeFile(inputPath, options) ?: return
 
-            val upscaler = AiUpscaler()
-
-            // Ejecutar el Pipeline Híbrido (Real-ESRGAN x4 + GFPGAN)
-            val result = upscaler.processPipeline(
-                context = this,
-                inputBitmap = bitmap,
-                onProgress = { msg, progress ->
-                    updateNotification(msg, progress, 100)
+            // 1. DESENFOQUE (Cloud o InSPyReNet Local)
+            if (blur > 0f) {
+                if (useCloud) {
+                    updateNotification("PhotoRoom Matting...", 20, 100)
+                    val cloudResult = processPhotoRoomMatting(bitmap)
+                    if (cloudResult != null) {
+                        val processor = ImageProcessor()
+                        val blurred = processor.applySelectiveBlur(bitmap, cloudResult, blur, isNaturalDepth = true, focusY = focusY)
+                        bitmap.recycle()
+                        cloudResult.recycle()
+                        bitmap = blurred
+                    }
+                } else {
+                    updateNotification("IA Portrait Matting...", 20, 100)
+                    val segmentation = AiSegmentation(this)
+                    if (segmentation.loadModel()) {
+                        val mask = segmentation.getPersonMask(bitmap)
+                        if (mask != null) {
+                            val processor = ImageProcessor()
+                            val blurred = processor.applySelectiveBlur(bitmap, mask, blur, isNaturalDepth = true, focusY = focusY)
+                            bitmap.recycle()
+                            mask.recycle()
+                            bitmap = blurred
+                        }
+                    }
+                    segmentation.close()
                 }
-            )
-
-            if (result != null) {
-                bitmap.recycle()
-                bitmap = result
             }
 
-            // 3. PASO 3: Efectos Finales (Nitidez y Color sobre imagen fotorrealista)
-            updateNotification("Ajustando detalles finales...", 95, 100)
+            // 2. PIPELINE IA (Limpieza y Upscaler)
+            if (isAiEnhance || isCleanup || scale > 1) {
+                updateNotification("Reconstrucción IA...", 50, 100)
+                val upscaler = AiUpscaler()
+                val aiResult = upscaler.processPipeline(
+                    context = this,
+                    inputBitmap = bitmap,
+                    isAiEnhance = isAiEnhance,
+                    isCleanup = isCleanup,
+                    targetScale = scale,
+                    onProgress = { msg, prog ->
+                        updateNotification(msg, 50 + (prog * 0.4).toInt(), 100)
+                    }
+                )
+                if (aiResult != null) {
+                    if (bitmap != aiResult) bitmap.recycle()
+                    bitmap = aiResult
+                }
+            }
+
+            // 3. EFECTOS FINALES
+            updateNotification("Finalizando detalles...", 95, 100)
             val processor = ImageProcessor()
             val composeMatrix = androidx.compose.ui.graphics.ColorMatrix(matrix)
             val finalBitmap = processor.applyFinalEffects(
-                this, bitmap, composeMatrix, vignette, sharpen * 20f, texture * 20f
+                this, bitmap, composeMatrix, vignette, sharpen * 10f, texture * 10f
             )
 
-            // 4. Guardar
-            updateNotification("Guardando en Galería...", 95, 100)
             saveToGallery(finalBitmap)
-            
-            // Limpieza
             File(inputPath).delete()
             
         } catch (e: Exception) {
             Log.e("ExportService", "Error: ${e.message}")
-            showFinishedNotification("Error en SiloEdit: ${e.message}")
+            showFinishedNotification("Error en la exportación.")
         }
+    }
+
+    private suspend fun processPhotoRoomMatting(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val tempFile = File(cacheDir, "photoroom_matting.jpg")
+            FileOutputStream(tempFile).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+            val requestBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("imageFile", tempFile.name, tempFile.asRequestBody("image/jpeg".toMediaType()))
+                .addFormDataPart("removeBackground", "true")
+                .addFormDataPart("outputFormat", "png")
+                .build()
+            val request = Request.Builder()
+                .url("https://image-api.photoroom.com/v2/edit")
+                .addHeader("x-api-key", "sk_pr_test_fb6193d04d978bfe5d34ef21a86d0e51a917b73b")
+                .post(requestBody)
+                .build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val bytes = response.body?.bytes()
+                tempFile.delete()
+                if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size) else null
+            } else {
+                tempFile.delete()
+                null
+            }
+        } catch (e: Exception) { null }
     }
 
     private fun saveToGallery(bitmap: Bitmap) {
@@ -134,16 +243,17 @@ class ExportService : Service() {
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/SiloEdit")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/SiloEdit")
+            }
         }
-
         val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
         uri?.let {
             contentResolver.openOutputStream(it)?.use { stream ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 98, stream)
             }
         }
-        showFinishedNotification("¡Imagen guardada con éxito!")
+        showFinishedNotification("¡Imagen guardada en Galería!")
     }
 
     private fun createNotification(text: String, progress: Int, total: Int): Notification {
@@ -152,7 +262,6 @@ class ExportService : Service() {
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
             .setProgress(total, progress, false)
             .build()
     }
@@ -166,7 +275,7 @@ class ExportService : Service() {
     private fun showFinishedNotification(text: String) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Procesamiento Completado")
+            .setContentTitle("SiloEdit")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
@@ -183,7 +292,6 @@ class ExportService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-    
     override fun onDestroy() {
         serviceScope.cancel()
         super.onDestroy()
