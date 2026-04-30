@@ -12,7 +12,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.photoeditor"
+        applicationId = "com.siloedit.studio"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -22,10 +22,6 @@ android {
         
         renderscriptTargetApi = 21
         renderscriptSupportModeEnabled = true
-        
-        androidResources {
-            noCompress("tflite", "onnx")
-        }
     }
 
     buildTypes {
