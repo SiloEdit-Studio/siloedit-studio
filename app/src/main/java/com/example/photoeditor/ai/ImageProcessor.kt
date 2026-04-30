@@ -17,9 +17,13 @@ class ImageProcessor {
         blurRadius: Float,
         manualMask: Bitmap? = null,
         isNaturalDepth: Boolean = true,
+<<<<<<< HEAD
         focusY: Float = 0.8f,
         focusWidth: Float = 0.15f,
         focusGradient: Float = 0.2f
+=======
+        focusY: Float = 0.8f
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
     ): Bitmap {
         if (blurRadius <= 0f) return src
 
@@ -33,7 +37,11 @@ class ImageProcessor {
 
         // 2. Crear fondo con desenfoque (Natural o Plano)
         val blurredBackground = if (isNaturalDepth) {
+<<<<<<< HEAD
             applyDepthBlur(src, blurRadius, focusY, focusWidth, focusGradient)
+=======
+            applyDepthBlur(src, blurRadius, focusY)
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         } else {
             val blurScale = if (blurRadius > 15) 4 else 2
             betterFastBlur(src, blurRadius.toInt(), blurScale)
@@ -83,6 +91,7 @@ class ImageProcessor {
         return result
     }
 
+<<<<<<< HEAD
     private fun applyDepthBlur(
         src: Bitmap, 
         maxRadius: Float, 
@@ -99,19 +108,39 @@ class ImageProcessor {
         
         val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
+=======
+    private fun applyDepthBlur(src: Bitmap, maxRadius: Float, focusY: Float = 0.8f): Bitmap {
+        val w = src.width
+        val h = src.height
+        
+        // Capas de desenfoque reales
+        val farBlur = betterFastBlur(src, maxRadius.toInt(), 4)
+        val midBlur = betterFastBlur(src, (maxRadius * 0.4f).toInt(), 2)
+        
+        val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
 
         // 1. Capa Base: Fondo total desenfocado
         canvas.drawBitmap(farBlur, 0f, 0f, null)
 
+<<<<<<< HEAD
         val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         val opaque = 0xFF000000.toInt()
         val transparent = 0x00000000.toInt()
 
         // 2. Capa Media: Transición suave (midBlur)
+=======
+        // 2. Capa Media: Transición
+        // El punto de enfoque (focusY) es donde la nitidez es máxima.
+        // El desenfoque aumenta alejándose de focusY (hacia arriba y abajo).
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         val midLayer = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val midCanvas = Canvas(midLayer)
         midCanvas.drawBitmap(midBlur, 0f, 0f, null)
         
+<<<<<<< HEAD
         // El área de transición es más amplia para evitar bordes duros
         val midStart = (focusY - focusWidth - focusGradient * 1.5f).coerceAtLeast(-0.2f)
         val midEnd = (focusY + focusWidth + focusGradient * 1.5f).coerceAtMost(1.2f)
@@ -121,6 +150,15 @@ class ImageProcessor {
             0f, h * midEnd, 
             intArrayOf(transparent, opaque, opaque, transparent),
             floatArrayOf(0f, 0.4f, 0.6f, 1f),
+=======
+        val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        // Gradiente centrado en el punto de enfoque
+        val midGradient = LinearGradient(
+            0f, h * (focusY - 0.3f).coerceAtLeast(0f), 
+            0f, h * (focusY + 0.1f).coerceAtMost(1f), 
+            intArrayOf(Color.TRANSPARENT, Color.BLACK, Color.TRANSPARENT),
+            floatArrayOf(0f, 0.5f, 1f),
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
             Shader.TileMode.CLAMP
         )
         maskPaint.shader = midGradient
@@ -128,11 +166,16 @@ class ImageProcessor {
         midCanvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), maskPaint)
         canvas.drawBitmap(midLayer, 0f, 0f, null)
 
+<<<<<<< HEAD
         // 3. Suelo Nítido (Sharp) - Con gradiente progresivo de 5 pasos
+=======
+        // 3. Suelo Nítido (Donde está el punto de interés)
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         val sharpLayer = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val sharpCanvas = Canvas(sharpLayer)
         sharpCanvas.drawBitmap(src, 0f, 0f, null)
         
+<<<<<<< HEAD
         val sharpStart = (focusY - focusWidth).coerceAtLeast(-0.1f)
         val sharpEnd = (focusY + focusWidth).coerceAtMost(1.1f)
 
@@ -141,6 +184,13 @@ class ImageProcessor {
             0f, h * sharpEnd, 
             intArrayOf(transparent, transparent, opaque, opaque, transparent, transparent),
             floatArrayOf(0f, 0.15f, 0.4f, 0.6f, 0.85f, 1f),
+=======
+        val sharpGradient = LinearGradient(
+            0f, h * (focusY - 0.15f).coerceAtLeast(0f), 
+            0f, h * (focusY + 0.05f).coerceAtMost(1f), 
+            intArrayOf(Color.TRANSPARENT, Color.BLACK, Color.TRANSPARENT),
+            floatArrayOf(0f, 0.5f, 1f),
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
             Shader.TileMode.CLAMP
         )
         maskPaint.shader = sharpGradient

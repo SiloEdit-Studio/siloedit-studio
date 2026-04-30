@@ -38,9 +38,13 @@ class ExportService : Service() {
             blur: Float,
             useCloud: Boolean,
             matrix: FloatArray,
+<<<<<<< HEAD
             focusY: Float = 0.8f,
             focusWidth: Float = 0.15f,
             focusGradient: Float = 0.2f
+=======
+            focusY: Float = 0.8f
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         ) {
             val intent = Intent(context, ExportService::class.java).apply {
                 putExtra("inputPath", inputPath)
@@ -54,8 +58,11 @@ class ExportService : Service() {
                 putExtra("useCloud", useCloud)
                 putExtra("matrix", matrix)
                 putExtra("focusY", focusY)
+<<<<<<< HEAD
                 putExtra("focusWidth", focusWidth)
                 putExtra("focusGradient", focusGradient)
+=======
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -121,11 +128,17 @@ class ExportService : Service() {
             val useCloud = it.getBooleanExtra("useCloud", false)
             val matrix = it.getFloatArrayExtra("matrix") ?: FloatArray(20)
             val focusY = it.getFloatExtra("focusY", 0.8f)
+<<<<<<< HEAD
             val focusWidth = it.getFloatExtra("focusWidth", 0.15f)
             val focusGradient = it.getFloatExtra("focusGradient", 0.2f)
 
             serviceScope.launch {
                 processAndSave(inputPath, isAiEnhance, isCleanup, scale, sharpen, texture, vignette, blur, useCloud, matrix, focusY, focusWidth, focusGradient)
+=======
+
+            serviceScope.launch {
+                processAndSave(inputPath, isAiEnhance, isCleanup, scale, sharpen, texture, vignette, blur, useCloud, matrix, focusY)
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
                 stopForeground(STOP_FOREGROUND_DETACH)
                 stopSelf()
             }
@@ -144,15 +157,20 @@ class ExportService : Service() {
         blur: Float,
         useCloud: Boolean,
         matrix: FloatArray,
+<<<<<<< HEAD
         focusY: Float,
         focusWidth: Float,
         focusGradient: Float
+=======
+        focusY: Float
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
     ) {
         try {
             updateNotification("Cargando imagen...", 10, 100)
             val options = BitmapFactory.Options().apply { inMutable = true }
             var bitmap = BitmapFactory.decodeFile(inputPath, options) ?: return
 
+<<<<<<< HEAD
             // 1. PIPELINE IA (Limpieza y Upscaler) - AHORA PRIMERO
             if (isAiEnhance || isCleanup || scale > 1) {
                 updateNotification("Reconstrucción IA...", 20, 100)
@@ -225,6 +243,54 @@ class ExportService : Service() {
                         }
                     }
                     segmentation.close()
+=======
+            // 1. DESENFOQUE (Cloud o InSPyReNet Local)
+            if (blur > 0f) {
+                if (useCloud) {
+                    updateNotification("PhotoRoom Matting...", 20, 100)
+                    val cloudResult = processPhotoRoomMatting(bitmap)
+                    if (cloudResult != null) {
+                        val processor = ImageProcessor()
+                        val blurred = processor.applySelectiveBlur(bitmap, cloudResult, blur, isNaturalDepth = true, focusY = focusY)
+                        bitmap.recycle()
+                        cloudResult.recycle()
+                        bitmap = blurred
+                    }
+                } else {
+                    updateNotification("IA Portrait Matting...", 20, 100)
+                    val segmentation = AiSegmentation(this)
+                    if (segmentation.loadModel()) {
+                        val mask = segmentation.getPersonMask(bitmap)
+                        if (mask != null) {
+                            val processor = ImageProcessor()
+                            val blurred = processor.applySelectiveBlur(bitmap, mask, blur, isNaturalDepth = true, focusY = focusY)
+                            bitmap.recycle()
+                            mask.recycle()
+                            bitmap = blurred
+                        }
+                    }
+                    segmentation.close()
+                }
+            }
+
+            // 2. PIPELINE IA (Limpieza y Upscaler)
+            if (isAiEnhance || isCleanup || scale > 1) {
+                updateNotification("Reconstrucción IA...", 50, 100)
+                val upscaler = AiUpscaler()
+                val aiResult = upscaler.processPipeline(
+                    context = this,
+                    inputBitmap = bitmap,
+                    isAiEnhance = isAiEnhance,
+                    isCleanup = isCleanup,
+                    targetScale = scale,
+                    onProgress = { msg, prog ->
+                        updateNotification(msg, 50 + (prog * 0.4).toInt(), 100)
+                    }
+                )
+                if (aiResult != null) {
+                    if (bitmap != aiResult) bitmap.recycle()
+                    bitmap = aiResult
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
                 }
             }
 

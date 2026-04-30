@@ -199,6 +199,7 @@ class AiUpscaler {
         val height = bitmap.height
         val output = Bitmap.createBitmap(width * targetScale, height * targetScale, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
+<<<<<<< HEAD
         
         // Aumentamos overlap para mayor suavidad
         val overlap = 32
@@ -210,6 +211,13 @@ class AiUpscaler {
         // Creamos una máscara de desvanecimiento para los bordes de los tiles
         val mask = createFeatherMask(tileSize * targetScale, overlap * targetScale)
         val paint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OVER) }
+=======
+        val overlap = 16
+        val step = tileSize - overlap
+        
+        val xSteps = kotlin.math.ceil(width.toDouble() / step).toInt()
+        val ySteps = kotlin.math.ceil(height.toDouble() / step).toInt()
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
 
         for (y in 0 until ySteps) {
             for (x in 0 until xSteps) {
@@ -221,6 +229,7 @@ class AiUpscaler {
                     val processed = upscaler.runInference(modelName, tile)
                     
                     val finalTile = processed ?: Bitmap.createScaledBitmap(tile, tileSize * targetScale, tileSize * targetScale, true)
+<<<<<<< HEAD
                     
                     // Mezclado suave de bordes
                     if (x == 0 && y == 0) {
@@ -231,6 +240,11 @@ class AiUpscaler {
                         blendedTile.recycle()
                     }
 
+=======
+
+                    canvas.drawBitmap(finalTile, (startX * targetScale).toFloat(), (startY * targetScale).toFloat(), null)
+                    
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
                     if (processed != null) processed.recycle()
                     tile.recycle()
                 } catch (e: Exception) {
@@ -238,7 +252,10 @@ class AiUpscaler {
                 }
             }
         }
+<<<<<<< HEAD
         mask.recycle()
+=======
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         return output
     }
 
@@ -251,7 +268,11 @@ class AiUpscaler {
         onProgress: (String, Int) -> Unit
     ): Bitmap {
         val tileSize = 256 
+<<<<<<< HEAD
         val overlap = 32 // Aumentado para evitar costuras
+=======
+        val overlap = 16
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         val internalScale = 4 
         val width = bitmap.width
         val height = bitmap.height
@@ -263,12 +284,19 @@ class AiUpscaler {
         val canvas = Canvas(output)
         
         val step = tileSize - overlap
+<<<<<<< HEAD
         val xSteps = kotlin.math.ceil((width - overlap).toDouble() / step).toInt()
         val ySteps = kotlin.math.ceil((height - overlap).toDouble() / step).toInt()
         val total = xSteps * ySteps
 
         val mask = createFeatherMask(tileSize * targetScale, overlap * targetScale)
 
+=======
+        val xSteps = kotlin.math.ceil(width.toDouble() / step).toInt()
+        val ySteps = kotlin.math.ceil(height.toDouble() / step).toInt()
+        val total = xSteps * ySteps
+
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         for (y in 0 until ySteps) {
             for (x in 0 until xSteps) {
                 val startX = (x * step).coerceAtMost(width - tileSize).coerceAtLeast(0)
@@ -297,6 +325,7 @@ class AiUpscaler {
                     upscaler.runInference(modelName, tile)
                 }
 
+<<<<<<< HEAD
                 val finalTile = processed?.let { pTile ->
                     if (targetScale != internalScale) {
                         val scaledTile = Bitmap.createScaledBitmap(pTile, tileSize * targetScale, tileSize * targetScale, true)
@@ -313,6 +342,15 @@ class AiUpscaler {
                     canvas.drawBitmap(blendedTile, (startX * targetScale).toFloat(), (startY * targetScale).toFloat(), null)
                     blendedTile.recycle()
                 }
+=======
+                val finalTile = processed?.let {
+                    if (targetScale != internalScale) {
+                        Bitmap.createScaledBitmap(it, tileSize * targetScale, tileSize * targetScale, true).also { it.recycle() }
+                    } else it
+                } ?: Bitmap.createScaledBitmap(tile, tileSize * targetScale, tileSize * targetScale, true)
+
+                canvas.drawBitmap(finalTile, (startX * targetScale).toFloat(), (startY * targetScale).toFloat(), null)
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
                 
                 if (finalTile != tile) finalTile.recycle()
                 tile.recycle()
@@ -322,7 +360,10 @@ class AiUpscaler {
                 }
             }
         }
+<<<<<<< HEAD
         mask.recycle()
+=======
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         return output
     }
 

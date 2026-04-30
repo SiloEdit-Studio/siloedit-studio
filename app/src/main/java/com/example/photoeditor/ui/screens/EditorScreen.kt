@@ -88,8 +88,11 @@ fun EditorScreen(viewModel: PhotoViewModel) {
     // Retrato y Fondo
     var blurAmountSlider by remember { mutableFloatStateOf(0f) }
     var focusY by remember { mutableFloatStateOf(0.8f) }
+<<<<<<< HEAD
     var focusWidth by remember { mutableFloatStateOf(0.15f) }
     var focusGradient by remember { mutableFloatStateOf(0.2f) }
+=======
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
     var blurMask by remember { mutableStateOf<Bitmap?>(null) }
     var manualMask by remember { mutableStateOf<Bitmap?>(null) }
     var isProcessingPortrait by remember { mutableStateOf(false) }
@@ -125,7 +128,11 @@ fun EditorScreen(viewModel: PhotoViewModel) {
         }
     }
 
+<<<<<<< HEAD
     val blurredPreviewBitmap = remember(previewBitmap, blurAmountSlider, blurMask, manualMask, maskUpdateTick, focusY, focusWidth, focusGradient) {
+=======
+    val blurredPreviewBitmap = remember(previewBitmap, blurAmountSlider, blurMask, manualMask, maskUpdateTick, focusY) {
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
         if (previewBitmap != null && blurAmountSlider > 0) {
             val baseMask = blurMask ?: Bitmap.createBitmap(previewBitmap.width, previewBitmap.height, Bitmap.Config.ARGB_8888)
             val finalMask = if (manualMask != null) {
@@ -136,6 +143,7 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                 scaledManual.recycle()
                 combined
             } else baseMask
+<<<<<<< HEAD
             val result = processor.applySelectiveBlur(
                 previewBitmap, 
                 finalMask, 
@@ -145,6 +153,9 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                 focusWidth = focusWidth,
                 focusGradient = focusGradient
             )
+=======
+            val result = processor.applySelectiveBlur(previewBitmap, finalMask, blurAmountSlider / 2f, isNaturalDepth = true, focusY = focusY)
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
             if (finalMask != baseMask) finalMask.recycle()
             result
         } else null
@@ -187,10 +198,14 @@ fun EditorScreen(viewModel: PhotoViewModel) {
         
         val mappedY = (yInContainer - contentY) / fitScale
         focusY = (mappedY / bmpH).coerceIn(0f, 1f)
+<<<<<<< HEAD
         
         if (blurAmountSlider == 0f) blurAmountSlider = 15f
         maskUpdateTick++
         Toast.makeText(context, "Punto de enfoque fijado", Toast.LENGTH_SHORT).show()
+=======
+        maskUpdateTick++
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
     }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -222,9 +237,13 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                     blur = blurAmountSlider,
                     useCloud = false, // PhotoRoom eliminado
                     matrix = finalMatrix.values,
+<<<<<<< HEAD
                     focusY = focusY,
                     focusWidth = focusWidth,
                     focusGradient = focusGradient
+=======
+                    focusY = focusY
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
                 )
                 withContext(Dispatchers.Main) { Toast.makeText(context, "Exportando...", Toast.LENGTH_SHORT).show() }
             } catch (e: Exception) { e.printStackTrace() } finally { isSavingProcess = false }
@@ -299,6 +318,7 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                                                 ) {
                                                     if (isProcessingPortrait) CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White) 
                                                     else Text("APLICAR RECORTE IA")
+<<<<<<< HEAD
                                                 }
 
                                                 if (blurMask != null) {
@@ -351,6 +371,33 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                                                 }
 
                                                 Spacer(Modifier.height(16.dp))
+=======
+                                                }
+
+                                                Spacer(Modifier.height(16.dp))
+                                                Text("DESENFOQUE NATURAL", color = if (blurMask != null) LightroomBlue else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                
+                                                LightroomSlider(
+                                                    label = "Intensidad", 
+                                                    value = blurAmountSlider, 
+                                                    range = 0f..50f, 
+                                                    onValueChange = { blurAmountSlider = it },
+                                                    enabled = blurMask != null
+                                                )
+
+                                                OutlinedButton(
+                                                    onClick = { isFocusSelectMode = !isFocusSelectMode; isBrushMode = false }, 
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    enabled = blurMask != null,
+                                                    border = if(isFocusSelectMode) BorderStroke(2.dp, LightroomBlue) else null
+                                                ) { 
+                                                    Icon(Icons.Default.Adjust, null, modifier = Modifier.size(14.dp))
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text("CAMBIAR PUNTO DE ENFOQUE", fontSize = 11.sp) 
+                                                }
+
+                                                Spacer(Modifier.height(16.dp))
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
                                                 Text("RETOQUE MANUAL", color = if (blurMask != null) LightroomBlue else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                                     OutlinedButton(
@@ -421,6 +468,7 @@ fun EditorScreen(viewModel: PhotoViewModel) {
             contentAlignment = Alignment.Center
         ) {
             if (currentBitmap != null) {
+<<<<<<< HEAD
                 Box(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y), contentAlignment = Alignment.Center) {
                     val imgModifier = Modifier.aspectRatio(currentBitmap!!.width.toFloat() / currentBitmap!!.height.toFloat())
                     
@@ -449,6 +497,11 @@ fun EditorScreen(viewModel: PhotoViewModel) {
                     }
                 }
 
+=======
+                Image(bitmap = (blurredPreviewBitmap ?: previewBitmap ?: currentBitmap!!).asImageBitmap(), contentDescription = null,
+                    modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
+                    colorFilter = if (isComparing) null else ColorFilter.colorMatrix(finalMatrix))
+>>>>>>> 842b54e430b6928ad98350ff0607f6fe160e8cb7
                 if (isProcessingPortrait) Box(Modifier.fillMaxSize().background(Color.Black.copy(0.7f)), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = LightroomBlue) }
             } else {
                 Button(onClick = { launcher.launch("image/*") }, colors = ButtonDefaults.buttonColors(containerColor = LightroomBlue)) { Text("ABRIR GALERÍA") }
